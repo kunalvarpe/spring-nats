@@ -16,10 +16,11 @@
     </parent>
 
     <properties>
-        <spring-boot.version>3.5.0</spring-boot.version>
+        <spring-boot.version>3.5.14</spring-boot.version>
         <spring-cloud-stream.version>4.2.1</spring-cloud-stream.version>
-        <junit.version>4.13.2</junit.version>
         <java.version>17</java.version>
+        <jacoco.version>0.8.13</jacoco.version>
+        <maven-surefire-plugin.version>3.5.4</maven-surefire-plugin.version>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.release>17</maven.compiler.release>
         <!-- Unique entry point for version number management -->
@@ -98,12 +99,6 @@
                 <version>${spring-cloud-stream.version}</version>
                 <scope>test</scope>
             </dependency>
-            <dependency>
-                <groupId>junit</groupId>
-                <artifactId>junit</artifactId>
-                <version>${junit.version}</version>
-                <scope>test</scope>
-            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -135,8 +130,16 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven-surefire-plugin.version}</version>
                     <configuration>
                         <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                        <properties>
+                            <configurationParameters>
+                                junit.jupiter.execution.parallel.enabled = true
+                                junit.jupiter.execution.parallel.mode.default = concurrent
+                                junit.jupiter.execution.parallel.mode.classes.default = concurrent
+                            </configurationParameters>
+                        </properties>
                     </configuration>
                 </plugin>
             </plugins>
@@ -156,7 +159,7 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.10</version>
+                <version>${jacoco.version}</version>
                 <executions>
                     <execution>
                         <goals>

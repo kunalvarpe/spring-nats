@@ -31,14 +31,19 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.cloud.stream.binder.AbstractMessageChannelBinder;
 import org.springframework.cloud.stream.binder.BinderSpecificPropertiesProvider;
+import org.springframework.cloud.stream.binder.EmbeddedHeaderUtils;
 import org.springframework.cloud.stream.binder.ExtendedConsumerProperties;
 import org.springframework.cloud.stream.binder.ExtendedProducerProperties;
 import org.springframework.cloud.stream.binder.ExtendedPropertiesBinder;
+import org.springframework.cloud.stream.binder.HeaderMode;
 import org.springframework.cloud.stream.provisioning.ConsumerDestination;
 import org.springframework.cloud.stream.provisioning.ProducerDestination;
 import org.springframework.integration.core.MessageProducer;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHandler;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * A NATS channel binder provides a NATS connection to the code attached to it.
@@ -71,7 +76,7 @@ public class NatsChannelBinder extends
                              NatsChannelProvisioner provisioningProvider,
                              ConnectionListener connectionListener,
                              ErrorListener errorListener) {
-        super(null, provisioningProvider); // null for headers to embed
+        super(headersToEmbed(properties), provisioningProvider);
         this.bindingProperties = bindingProperties;
         this.properties = properties;
         this.natsProperties = natsProperties;
@@ -146,21 +151,64 @@ public class NatsChannelBinder extends
     @Override
     protected MessageHandler createProducerMessageHandler(ProducerDestination destination,
                                                           ExtendedProducerProperties<NatsProducerProperties> producerProperties, MessageChannel errorChannel) {
-        return new NatsMessageHandler(destination.getName(), this.connection);
+        return new NatsMessageHandler(destination.getName(), this.connection, shouldUseNativeHeaders(producerProperties));
     }
 
     @Override
     protected MessageProducer createConsumerEndpoint(ConsumerDestination destination, String group,
                                                      ExtendedConsumerProperties<NatsConsumerProperties> properties) {
-        return new NatsMessageProducer((NatsConsumerDestination) destination, this.connection);
+        return new NatsMessageProducer(
+                (NatsConsumerDestination) destination,
+                this.connection,
+                shouldUseNativeHeaders(properties),
+                shouldMarkNativeHeadersPresent(properties));
     }
 
     @Override
     protected PolledConsumerResources createPolledConsumerResources(String name, String group,
                                                                     ConsumerDestination destination, ExtendedConsumerProperties<NatsConsumerProperties> consumerProperties) {
         return new PolledConsumerResources(
-                new NatsMessageSource((NatsConsumerDestination) destination, this.connection),
+                new NatsMessageSource(
+                        (NatsConsumerDestination) destination,
+                        this.connection,
+                        shouldUseNativeHeaders(consumerProperties),
+                        shouldMarkNativeHeadersPresent(consumerProperties)),
                 registerErrorInfrastructure(destination, group, consumerProperties, true));
+    }
+
+    private static boolean shouldUseNativeHeaders(ExtendedProducerProperties<NatsProducerProperties> producerProperties) {
+        return producerProperties == null
+                || producerProperties.getHeaderMode() == null
+                || HeaderMode.headers.equals(producerProperties.getHeaderMode());
+    }
+
+    private static boolean shouldUseNativeHeaders(ExtendedConsumerProperties<NatsConsumerProperties> consumerProperties) {
+        return consumerProperties == null
+                || consumerProperties.getHeaderMode() == null
+                || HeaderMode.headers.equals(consumerProperties.getHeaderMode());
+    }
+
+    private static boolean shouldMarkNativeHeadersPresent(ExtendedConsumerProperties<NatsConsumerProperties> consumerProperties) {
+        return !HeaderMode.none.equals(consumerProperties == null ? null : consumerProperties.getHeaderMode());
+    }
+
+    private static String[] headersToEmbed(NatsBinderConfigurationProperties properties) {
+        if (properties == null || properties.getHeadersToEmbed() == null) {
+            return EmbeddedHeaderUtils.headersToEmbed(null);
+        }
+
+        List<String> configuredHeaders = new ArrayList<>();
+        for (String header : properties.getHeadersToEmbed()) {
+            if (header != null && header.trim().length() > 0) {
+                configuredHeaders.add(header.trim());
+            }
+        }
+
+        if (configuredHeaders.isEmpty()) {
+            return EmbeddedHeaderUtils.headersToEmbed(null);
+        }
+
+        return EmbeddedHeaderUtils.headersToEmbed(configuredHeaders.toArray(new String[0]));
     }
 
     @Override
