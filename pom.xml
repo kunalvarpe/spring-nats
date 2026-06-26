@@ -16,7 +16,7 @@
     </parent>
 
     <properties>
-        <spring-boot.version>3.5.0</spring-boot.version>
+        <spring-boot.version>3.5.14</spring-boot.version>
         <spring-cloud-stream.version>4.2.1</spring-cloud-stream.version>
         <java.version>17</java.version>
         <jacoco.version>0.8.13</jacoco.version>
@@ -133,6 +133,13 @@
                     <version>${maven-surefire-plugin.version}</version>
                     <configuration>
                         <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                        <properties>
+                            <configurationParameters>
+                                junit.jupiter.execution.parallel.enabled = true
+                                junit.jupiter.execution.parallel.mode.default = concurrent
+                                junit.jupiter.execution.parallel.mode.classes.default = concurrent
+                            </configurationParameters>
+                        </properties>
                     </configuration>
                 </plugin>
             </plugins>
