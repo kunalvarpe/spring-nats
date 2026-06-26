@@ -16,6 +16,8 @@
 
 package io.nats.cloud.stream.binder;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
 import io.nats.client.Connection;
 import io.nats.client.ConnectionListener;
 import io.nats.client.Consumer;
@@ -31,11 +33,15 @@ import io.nats.cloud.stream.binder.properties.NatsProducerProperties;
 import io.nats.spring.boot.autoconfigure.NatsAutoConfiguration;
 import io.nats.spring.boot.autoconfigure.NatsProperties;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.context.properties.source.ConfigurationPropertyName;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.cloud.stream.binder.BinderHeaders;
 import org.springframework.cloud.stream.binder.Binding;
 import org.springframework.cloud.stream.binder.EmbeddedHeaderUtils;
@@ -787,7 +793,11 @@ class BinderTests {
     }
 
     @Test
-    void messageHandlerSkipsHeadersThatCannotBeMappedToNatsHeaders() throws Exception {
+    @ExtendWith(OutputCaptureExtension.class)
+    void messageHandlerSkipsHeadersThatCannotBeMappedToNatsHeaders(CapturedOutput output) throws Exception {
+        Logger mapperLogger = (Logger) LoggerFactory.getLogger("io.nats.cloud.stream.binder.NatsHeaderMapper");
+        Level originalLevel = mapperLogger.getLevel();
+        mapperLogger.setLevel(Level.DEBUG);
         try (NatsBinderTestServer ts = new NatsBinderTestServer()) {
             this.contextRunner.withPropertyValues("nats.spring.server=" + ts.getURI()).run(context -> {
                 Connection conn = context.getBean(Connection.class);
@@ -816,8 +826,12 @@ class BinderTests {
                     assertThat(received).isNotNull();
                     assertThat(new String(received.getData(), UTF_8)).isEqualTo(payload);
                     assertThat(received.hasHeaders()).isFalse();
+                    assertThat(output).contains("Skipping Spring header 'invalid-value'");
+                    assertThat(output).doesNotContain("bad\r\nvalue");
                 }
             });
+        } finally {
+            mapperLogger.setLevel(originalLevel);
         }
     }
 
@@ -1161,13 +1175,15 @@ class BinderTests {
                         consumerBinding = fixture.binder().bindConsumer(subject, "", input, consumerProperties);
                         fixture.connection().flush(FLUSH_TIMEOUT);
 
-                        conn.publish(subject, headersWithTrace("hidden"), payload.getBytes(UTF_8));
+                        conn.publish(subject, "actual.reply", headersWithTrace("hidden"), payload.getBytes(UTF_8));
                         conn.flush(FLUSH_TIMEOUT);
 
                         org.springframework.messaging.Message<?> message = received.get(5, TimeUnit.SECONDS);
                         assertThat(payloadText(message.getPayload())).isEqualTo(payload);
                         assertThat(message.getHeaders()).doesNotContainKey(TRACE_HEADER);
                         assertThat(message.getHeaders()).doesNotContainKey(BinderHeaders.NATIVE_HEADERS_PRESENT);
+                        assertThat(message.getHeaders()).containsEntry(NatsMessageProducer.SUBJECT, subject);
+                        assertThat(message.getHeaders()).containsEntry(MessageHeaders.REPLY_CHANNEL, "actual.reply");
                     } finally {
                         if (consumerBinding != null) {
                             consumerBinding.unbind();

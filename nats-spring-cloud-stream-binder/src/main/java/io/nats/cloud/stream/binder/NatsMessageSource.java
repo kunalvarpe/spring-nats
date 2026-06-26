@@ -32,7 +32,7 @@ import java.util.Map;
  * Message source for NATS connections, allowing synchronous polling.
  */
 public class NatsMessageSource extends AbstractMessageSource<Object> implements Lifecycle {
-    private static final Log logger = LogFactory.getLog(NatsMessageHandler.class);
+    private static final Log logger = LogFactory.getLog(NatsMessageSource.class);
 
     private NatsConsumerDestination destination;
     private Connection connection;
