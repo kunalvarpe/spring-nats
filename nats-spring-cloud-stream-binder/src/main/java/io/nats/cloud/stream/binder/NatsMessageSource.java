@@ -23,11 +23,9 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.context.Lifecycle;
 import org.springframework.integration.endpoint.AbstractMessageSource;
-import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.support.GenericMessage;
 
 import java.time.Duration;
-import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -39,6 +37,8 @@ public class NatsMessageSource extends AbstractMessageSource<Object> implements 
     private NatsConsumerDestination destination;
     private Connection connection;
     private Subscription sub;
+    private boolean includeNativeHeaders;
+    private boolean markNativeHeadersPresent;
 
     /**
      * Create a message source. Once started, the source will have a subscription but no threads.
@@ -49,8 +49,23 @@ public class NatsMessageSource extends AbstractMessageSource<Object> implements 
      * @param nc          NATS connection
      */
     public NatsMessageSource(NatsConsumerDestination destination, Connection nc) {
+        this(destination, nc, true, true);
+    }
+
+    /**
+     * Create a message source with explicit native header behavior.
+     *
+     * @param destination              where to subscribe
+     * @param nc                       NATS connection
+     * @param includeNativeHeaders     whether native NATS headers should be copied to Spring headers
+     * @param markNativeHeadersPresent whether Spring Cloud Stream should be told native headers were present
+     */
+    public NatsMessageSource(NatsConsumerDestination destination, Connection nc,
+                             boolean includeNativeHeaders, boolean markNativeHeadersPresent) {
         this.destination = destination;
         this.connection = nc;
+        this.includeNativeHeaders = includeNativeHeaders;
+        this.markNativeHeadersPresent = markNativeHeadersPresent;
     }
 
     @Override
@@ -63,9 +78,10 @@ public class NatsMessageSource extends AbstractMessageSource<Object> implements 
             Message m = this.sub.nextMessage(Duration.ZERO);
 
             if (m != null) {
-                Map<String, Object> headers = new HashMap<>();
-                headers.put(NatsMessageProducer.SUBJECT, m.getSubject());
-                headers.put(MessageHeaders.REPLY_CHANNEL, m.getReplyTo());
+                Map<String, Object> headers = NatsHeaderMapper.toSpringHeaders(
+                        m,
+                        this.includeNativeHeaders,
+                        this.markNativeHeadersPresent);
                 GenericMessage<byte[]> gm = new GenericMessage<byte[]>(m.getData(), headers);
                 return gm;
             }

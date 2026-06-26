@@ -16,10 +16,15 @@
 
 package io.nats.cloud.stream.binder;
 
-import org.junit.Test;
+import io.nats.cloud.stream.binder.properties.NatsBindingProperties;
+import io.nats.cloud.stream.binder.properties.NatsConsumerProperties;
+import io.nats.cloud.stream.binder.properties.NatsExtendedBindingProperties;
+import io.nats.cloud.stream.binder.properties.NatsProducerProperties;
+import org.junit.jupiter.api.Test;
 import org.springframework.cloud.stream.provisioning.ProducerDestination;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 public class DestinationNameTests {
     @Test
@@ -46,5 +51,22 @@ public class DestinationNameTests {
 
         assertEquals(subject, dest.getSubject());
         assertEquals("", dest.getQueueGroup());
+    }
+
+    @Test
+    public void testExtendedBindingProperties() {
+        NatsBindingProperties bindingProperties = new NatsBindingProperties();
+        NatsConsumerProperties consumer = new NatsConsumerProperties();
+        NatsProducerProperties producer = new NatsProducerProperties();
+
+        bindingProperties.setConsumer(consumer);
+        bindingProperties.setProducer(producer);
+
+        assertSame(consumer, bindingProperties.getConsumer());
+        assertSame(producer, bindingProperties.getProducer());
+
+        NatsExtendedBindingProperties extended = new NatsExtendedBindingProperties();
+        assertEquals("nats.spring.cloud.stream.default", extended.getDefaultsPrefix());
+        assertEquals(NatsBindingProperties.class, extended.getExtendedPropertiesEntryClass());
     }
 }

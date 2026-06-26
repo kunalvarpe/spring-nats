@@ -886,11 +886,11 @@ public class NatsConnectionProperties {
     protected KeyManager[] createKeyManagers(String path, char[] password, String keyStoreProvider, String keyStoreType)
             throws IOException, GeneralSecurityException {
 
-        if (keyStoreProvider == null || keyStoreProvider.length() == 0) {
+        if (!hasText(keyStoreProvider)) {
             keyStoreProvider = defaultKeyStoreProviderAlgorithm;
         }
 
-        if (keyStoreType == null || keyStoreType.length() == 0) {
+        if (!hasText(keyStoreType)) {
             keyStoreType = defaultKeyStoreType;
         }
 
@@ -908,11 +908,11 @@ public class NatsConnectionProperties {
     protected TrustManager[] createTrustManagers(String path, char[] password, String trustStoreProvider,
                                                  String trustStoreType) throws IOException, GeneralSecurityException {
 
-        if (trustStoreProvider == null || trustStoreProvider.length() == 0) {
+        if (!hasText(trustStoreProvider)) {
             trustStoreProvider = defaultTrustStoreProviderAlgorithm;
         }
 
-        if (trustStoreType == null || trustStoreType.length() == 0) {
+        if (!hasText(trustStoreType)) {
             trustStoreType = defaultTrustStoreType;
         }
 
@@ -941,7 +941,7 @@ public class NatsConnectionProperties {
      */
     protected SSLContext createSSLContext() throws IOException, GeneralSecurityException {
 
-        if (this.tlsProtocol == null || this.tlsProtocol.length() == 0) {
+        if (!hasText(this.tlsProtocol)) {
             this.tlsProtocol = Options.DEFAULT_SSL_PROTOCOL;
         }
 
@@ -972,6 +972,7 @@ public class NatsConnectionProperties {
      *                                  setting up the SSL context
      * @throws GeneralSecurityException if there is a problem setting up the SSL
      *                                  context
+     * @throws IllegalArgumentException if authentication or TLS configuration is incomplete
      */
     public Options toOptions() throws IOException, GeneralSecurityException {
         return toOptionsBuilder().build();
@@ -984,8 +985,15 @@ public class NatsConnectionProperties {
      *                                  setting up the SSL context
      * @throws GeneralSecurityException if there is a problem setting up the SSL
      *                                  context
+     * @throws IllegalArgumentException if authentication or TLS configuration is incomplete
      */
     public Options.Builder toOptionsBuilder() throws IOException, GeneralSecurityException {
+        boolean hasKeyStore = hasText(this.keyStorePath);
+        boolean hasTrustStore = hasText(this.trustStorePath);
+        if (hasKeyStore != hasTrustStore) {
+            throw new IllegalArgumentException("keystore and truststore paths must both be set for TLS");
+        }
+
         Options.Builder builder = new Options.Builder();
 
         builder = builder.server(this.server);
@@ -1013,19 +1021,21 @@ public class NatsConnectionProperties {
             builder = builder.tlsFirst();
         }
 
-        if (this.nkey != null && this.nkey.length() > 0) {
-            char[] jwtChars = this.jwt != null ? this.jwt.toCharArray() : null;
+        if (hasText(this.nkey)) {
+            char[] jwtChars = hasText(this.jwt) ? this.jwt.toCharArray() : null;
             builder = builder.authHandler(Nats.staticCredentials(jwtChars, this.nkey.toCharArray()));
-        } else if (this.credentials != null && this.credentials.length() > 0) {
+        } else if (hasText(this.credentials)) {
             builder = builder.authHandler(Nats.credentials(this.credentials));
-        } else if (this.token != null && this.token.length() > 0) {
+        } else if (hasText(this.token)) {
             builder = builder.token(this.token.toCharArray());
-        } else if (this.username != null && this.username.length() > 0) {
+        } else if (hasText(this.username)) {
+            if (!hasText(this.password)) {
+                throw new IllegalArgumentException("password must be set when username is set");
+            }
             builder = builder.userInfo(this.username.toCharArray(), this.password.toCharArray());
         }
 
-        if (this.keyStorePath != null && this.keyStorePath.length() > 0 && this.trustStorePath != null
-                && this.trustStorePath.length() > 0) {
+        if (hasKeyStore) {
             builder.sslContext(this.createSSLContext());
         }
 
@@ -1058,7 +1068,11 @@ public class NatsConnectionProperties {
     }
 
     private String redact(String text) {
-        return text == null || text.isEmpty() ? "N/A" : "**********";
+        return hasText(text) ? "**********" : "N/A";
+    }
+
+    private static boolean hasText(String text) {
+        return text != null && !text.isBlank();
     }
 
 }

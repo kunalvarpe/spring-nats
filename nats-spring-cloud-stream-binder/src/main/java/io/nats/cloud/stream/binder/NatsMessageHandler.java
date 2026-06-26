@@ -17,6 +17,7 @@
 package io.nats.cloud.stream.binder;
 
 import io.nats.client.Connection;
+import io.nats.client.impl.Headers;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.integration.handler.AbstractMessageHandler;
@@ -35,6 +36,7 @@ public class NatsMessageHandler extends AbstractMessageHandler {
 
     private String subject;
     private Connection connection;
+    private boolean publishHeaders;
 
     /**
      * Create a handler with a specific, unchanging subject, and a NATS connection.
@@ -43,8 +45,20 @@ public class NatsMessageHandler extends AbstractMessageHandler {
      * @param nc      NATS connection
      */
     public NatsMessageHandler(String subject, Connection nc) {
+        this(subject, nc, true);
+    }
+
+    /**
+     * Create a handler with a specific, unchanging subject, a NATS connection, and header mode.
+     *
+     * @param subject        where to send message to by default
+     * @param nc             NATS connection
+     * @param publishHeaders whether Spring headers should be published as native NATS headers
+     */
+    public NatsMessageHandler(String subject, Connection nc, boolean publishHeaders) {
         this.subject = subject;
         this.connection = nc;
+        this.publishHeaders = publishHeaders;
     }
 
     @Override
@@ -74,7 +88,13 @@ public class NatsMessageHandler extends AbstractMessageHandler {
 
         if (this.connection != null) {
             final Object replyChannel = message.getHeaders().get(MessageHeaders.REPLY_CHANNEL);
-            this.connection.publish(this.subject, replyChannel != null ? replyChannel.toString() : null, bytes);
+            final String replyTo = replyChannel != null ? replyChannel.toString() : null;
+            Headers headers = this.publishHeaders ? NatsHeaderMapper.fromSpringHeaders(message.getHeaders()) : null;
+            if (headers == null) {
+                this.connection.publish(this.subject, replyTo, bytes);
+            } else {
+                this.connection.publish(this.subject, replyTo, headers, bytes);
+            }
         }
     }
 }
