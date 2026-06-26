@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -34,12 +35,12 @@ class NatsHeaderMapper {
     private static final Log logger = LogFactory.getLog(NatsHeaderMapper.class);
 
     private static final Set<String> RESERVED_HEADERS = Set.of(
-            MessageHeaders.ID,
-            MessageHeaders.TIMESTAMP,
-            MessageHeaders.REPLY_CHANNEL,
-            MessageHeaders.ERROR_CHANNEL,
-            BinderHeaders.NATIVE_HEADERS_PRESENT,
-            NatsMessageProducer.SUBJECT
+            MessageHeaders.ID.toLowerCase(Locale.ROOT),
+            MessageHeaders.TIMESTAMP.toLowerCase(Locale.ROOT),
+            MessageHeaders.REPLY_CHANNEL.toLowerCase(Locale.ROOT),
+            MessageHeaders.ERROR_CHANNEL.toLowerCase(Locale.ROOT),
+            BinderHeaders.NATIVE_HEADERS_PRESENT.toLowerCase(Locale.ROOT),
+            NatsMessageProducer.SUBJECT.toLowerCase(Locale.ROOT)
     );
 
     private NatsHeaderMapper() {
@@ -115,11 +116,6 @@ class NatsHeaderMapper {
     }
 
     private static boolean isReserved(String name) {
-        for (String header : RESERVED_HEADERS) {
-            if (header.equalsIgnoreCase(name)) {
-                return true;
-            }
-        }
-        return false;
+        return name != null && RESERVED_HEADERS.contains(name.toLowerCase(Locale.ROOT));
     }
 }
