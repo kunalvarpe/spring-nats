@@ -21,6 +21,16 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "nats.spring.cloud.stream.binder")
 public class NatsBinderConfigurationProperties extends NatsConnectionProperties {
+    private String[] headersToEmbed;
+
     public NatsBinderConfigurationProperties() {
+    }
+
+    public String[] getHeadersToEmbed() {
+        return this.headersToEmbed;
+    }
+
+    public void setHeadersToEmbed(String[] headersToEmbed) {
+        this.headersToEmbed = headersToEmbed;
     }
 }

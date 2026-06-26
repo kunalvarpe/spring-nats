@@ -31,6 +31,8 @@ import io.nats.cloud.stream.binder.properties.NatsProducerProperties;
 import io.nats.spring.boot.autoconfigure.NatsAutoConfiguration;
 import io.nats.spring.boot.autoconfigure.NatsProperties;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.context.properties.source.ConfigurationPropertyName;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -76,7 +78,8 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
-final class BinderTests {
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
+class BinderTests {
     private static final Duration FLUSH_TIMEOUT = Duration.ofSeconds(5);
     private static final String SHARED_TLS_RESOURCES = "../nats-spring/src/test/resources/";
     private static final String TRACE_HEADER = "x-trace-id";
@@ -174,6 +177,18 @@ final class BinderTests {
         assertThat(config.getNatsProperties()).isSameAs(natsProperties);
         assertThat(config.natsChannelProvisioner()).isNotNull();
         assertThat(mappings).containsEntry(streamPrefix, streamPrefix);
+    }
+
+    @Test
+    void binderConfigurationBindsCustomEmbeddedHeaders() {
+        this.binderContextRunner
+                .withPropertyValues("nats.spring.cloud.stream.binder.headers-to-embed=" + TRACE_HEADER + ",x-tenant-id")
+                .run(context -> {
+                    NatsBinderConfigurationProperties properties =
+                            context.getBean(NatsBinderConfigurationProperties.class);
+
+                    assertThat(properties.getHeadersToEmbed()).containsExactly(TRACE_HEADER, "x-tenant-id");
+                });
     }
 
     @Test
@@ -941,6 +956,52 @@ final class BinderTests {
     }
 
     @Test
+    void embeddedHeaderModeEmbedsConfiguredCustomHeadersForIssue13() throws Exception {
+        try (NatsBinderTestServer ts = new NatsBinderTestServer()) {
+            this.contextRunner.withPropertyValues("nats.spring.server=" + ts.getURI()).run(context -> {
+                Connection conn = context.getBean(Connection.class);
+                assertConnected(conn, ts.getURI());
+
+                try (BinderFixture fixture = newGlobalBinder(ts.getURI(), TRACE_HEADER)) {
+                    fixture.binder().setApplicationContext(context.getSourceApplicationContext(GenericApplicationContext.class));
+                    String subject = "binder.embedded.headers.issue13.custom";
+                    String payload = "embedded custom header payload";
+                    DirectChannel output = new DirectChannel();
+                    ExtendedProducerProperties<NatsProducerProperties> producerProperties =
+                            new ExtendedProducerProperties<>(new NatsProducerProperties());
+                    producerProperties.setHeaderMode(HeaderMode.embeddedHeaders);
+                    Binding<MessageChannel> producerBinding = null;
+                    Subscription sub = conn.subscribe(subject);
+
+                    try {
+                        producerBinding = fixture.binder().bindProducer(subject, output, producerProperties);
+                        conn.flush(FLUSH_TIMEOUT);
+
+                        output.send(MessageBuilder.withPayload(payload.getBytes(UTF_8))
+                                .setHeader(MessageHeaders.CONTENT_TYPE, "text/plain")
+                                .setHeader(TRACE_HEADER, "trace-embedded")
+                                .build());
+                        fixture.connection().flush(FLUSH_TIMEOUT);
+
+                        Message raw = sub.nextMessage(FLUSH_TIMEOUT);
+                        assertThat(raw).isNotNull();
+                        assertThat(raw.hasHeaders()).isFalse();
+
+                        MessageValues extracted = EmbeddedHeaderUtils.extractHeaders(raw.getData());
+                        assertThat(payloadText(extracted.getPayload())).isEqualTo(payload);
+                        assertThat(extracted.get(MessageHeaders.CONTENT_TYPE)).isEqualTo("text/plain");
+                        assertThat(extracted.get(TRACE_HEADER)).isEqualTo("trace-embedded");
+                    } finally {
+                        if (producerBinding != null) {
+                            producerBinding.unbind();
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    @Test
     void embeddedHeaderModeRoundTripsThroughProducerAndConsumerBindingsForIssue13() throws Exception {
         try (NatsBinderTestServer ts = new NatsBinderTestServer()) {
             this.contextRunner.withPropertyValues("nats.spring.server=" + ts.getURI()).run(context -> {
@@ -1240,9 +1301,15 @@ final class BinderTests {
     }
 
     private static BinderFixture newGlobalBinder(String server) throws IOException, InterruptedException {
+        return newGlobalBinder(server, new String[0]);
+    }
+
+    private static BinderFixture newGlobalBinder(String server, String... headersToEmbed) throws IOException, InterruptedException {
         NatsProperties natsProperties = new NatsProperties();
         natsProperties.setServer(server);
-        return newBinder(natsProperties, new NatsBinderConfigurationProperties());
+        NatsBinderConfigurationProperties binderProperties = new NatsBinderConfigurationProperties();
+        binderProperties.setHeadersToEmbed(headersToEmbed);
+        return newBinder(natsProperties, binderProperties);
     }
 
     private static BinderFixture newBinderPropertiesBinder(String server) throws IOException, InterruptedException {

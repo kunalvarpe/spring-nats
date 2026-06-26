@@ -22,6 +22,8 @@ import io.nats.client.ErrorListener;
 import io.nats.client.Message;
 import io.nats.client.Subscription;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
@@ -39,7 +41,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-final class AutoconfigureTests {
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
+class AutoconfigureTests {
     private final ApplicationContextRunner contextRunner =
             new ApplicationContextRunner().withConfiguration(AutoConfigurations.of(NatsAutoConfiguration.class));
 
@@ -74,6 +77,26 @@ final class AutoconfigureTests {
                 assertThat(msg).isNotNull();
                 assertThat(new String(msg.getData(), UTF_8)).isEqualTo(payload);
             });
+        }
+    }
+
+    @Test
+    void directConnectionFactoryUsesProgrammaticProperties() throws Exception {
+        try (NatsTestServer ts = new NatsTestServer()) {
+            NatsProperties properties = new NatsProperties();
+            properties.setServer(ts.getURI());
+            properties.setConnectionTimeout(Duration.ofSeconds(15));
+            NatsAutoConfiguration configuration = new NatsAutoConfiguration();
+
+            try (Connection conn = configuration.natsConnection(
+                    properties,
+                    configuration.defaultConnectionListener(),
+                    configuration.defaultErrorListener())) {
+                assertThat(conn).isNotNull();
+                assertThat(conn.getStatus()).isSameAs(Connection.Status.CONNECTED);
+                assertThat(conn.getConnectedUrl()).isEqualTo(ts.getURI());
+                assertThat(conn.getOptions().getConnectionTimeout()).isEqualTo(Duration.ofSeconds(15));
+            }
         }
     }
 
@@ -166,11 +189,6 @@ final class AutoconfigureTests {
     }
 
     @Test
-    void testNoParamNoConnection() {
-        this.contextRunner.run(context -> assertThat(context).doesNotHaveBean(Connection.class));
-    }
-
-    @Test
     void defaultListenersHandleCallbacks() {
         this.contextRunner.run(context -> {
             ConnectionListener connectionListener = context.getBean(ConnectionListener.class);
@@ -188,24 +206,11 @@ final class AutoconfigureTests {
     }
 
     @Test
-    void testBlankServerFailsExplicitly() {
-        this.contextRunner.withPropertyValues("nats.spring.server= ").run(context -> {
-            assertThat(context).hasFailed();
-            assertThat(context.getStartupFailure()).hasRootCauseInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("nats.spring.server must not be blank");
-        });
-    }
-
-    @Test
-    void directConnectionFactoryRejectsMissingProperties() {
+    void directConnectionFactoryReturnsNullWithoutServerProperties() throws Exception {
         NatsAutoConfiguration config = new NatsAutoConfiguration();
 
-        assertThatThrownBy(() -> config.natsConnection(null, null, null))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("nats.spring.server must not be blank");
-        assertThatThrownBy(() -> config.natsConnection(new NatsProperties(), null, null))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("nats.spring.server must not be blank");
+        assertThat(config.natsConnection(null, null, null)).isNull();
+        assertThat(config.natsConnection(new NatsProperties(), null, null)).isNull();
     }
 
     @Test

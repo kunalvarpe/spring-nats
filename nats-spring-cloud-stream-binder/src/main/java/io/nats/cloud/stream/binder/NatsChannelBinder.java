@@ -42,6 +42,9 @@ import org.springframework.integration.core.MessageProducer;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHandler;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * A NATS channel binder provides a NATS connection to the code attached to it.
  */
@@ -73,7 +76,7 @@ public class NatsChannelBinder extends
                              NatsChannelProvisioner provisioningProvider,
                              ConnectionListener connectionListener,
                              ErrorListener errorListener) {
-        super(EmbeddedHeaderUtils.headersToEmbed(null), provisioningProvider);
+        super(headersToEmbed(properties), provisioningProvider);
         this.bindingProperties = bindingProperties;
         this.properties = properties;
         this.natsProperties = natsProperties;
@@ -187,6 +190,25 @@ public class NatsChannelBinder extends
 
     private static boolean shouldMarkNativeHeadersPresent(ExtendedConsumerProperties<NatsConsumerProperties> consumerProperties) {
         return !HeaderMode.none.equals(consumerProperties == null ? null : consumerProperties.getHeaderMode());
+    }
+
+    private static String[] headersToEmbed(NatsBinderConfigurationProperties properties) {
+        if (properties == null || properties.getHeadersToEmbed() == null) {
+            return EmbeddedHeaderUtils.headersToEmbed(null);
+        }
+
+        List<String> configuredHeaders = new ArrayList<>();
+        for (String header : properties.getHeadersToEmbed()) {
+            if (header != null && header.trim().length() > 0) {
+                configuredHeaders.add(header.trim());
+            }
+        }
+
+        if (configuredHeaders.isEmpty()) {
+            return EmbeddedHeaderUtils.headersToEmbed(null);
+        }
+
+        return EmbeddedHeaderUtils.headersToEmbed(configuredHeaders.toArray(new String[0]));
     }
 
     @Override

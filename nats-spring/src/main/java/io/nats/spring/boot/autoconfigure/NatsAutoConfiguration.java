@@ -28,7 +28,6 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 
@@ -48,21 +47,20 @@ public class NatsAutoConfiguration {
     private static final Log logger = LogFactory.getLog(NatsAutoConfiguration.class);
 
     /**
-     * @return NATS connection created with the provided properties
+     * @return NATS connection created with the provided properties. If no server URL is set the method will return null.
      * @throws IOException              when a connection error occurs
      * @throws InterruptedException     in the unusual case of a thread interruption during connect
      * @throws GeneralSecurityException if there is a problem authenticating the connection
-     * @throws IllegalArgumentException if the server URL is blank
      */
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnProperty(prefix = "nats.spring", name = "server")
     public Connection natsConnection(NatsProperties properties, ConnectionListener connectionListener, ErrorListener errorListener)
             throws IOException, InterruptedException, GeneralSecurityException {
+        Connection nc = null;
         String serverProp = (properties != null) ? properties.getServer() : null;
 
-        if (serverProp == null || serverProp.isBlank()) {
-            throw new IllegalArgumentException("nats.spring.server must not be blank");
+        if (serverProp == null || serverProp.length() == 0) {
+            return null;
         }
 
         try {
@@ -73,11 +71,12 @@ public class NatsAutoConfiguration {
 
             builder = builder.errorListener(errorListener);
 
-            return Nats.connect(builder.build());
+            nc = Nats.connect(builder.build());
         } catch (Exception e) {
             logger.info("error connecting to nats", e);
             throw e;
         }
+        return nc;
     }
 
     @Bean

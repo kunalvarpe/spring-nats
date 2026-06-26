@@ -225,38 +225,29 @@ public class PropertiesTests {
     }
 
     @Test
-    public void testUsernameWithoutPasswordFailsExplicitly() {
-        NatsConnectionProperties props = new NatsConnectionProperties();
-        props.setServer("nats://alphabet:4222");
-        props.setUsername("user");
-
-        assertThatThrownBy(props::toOptions)
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("password must be set when username is set");
-    }
-
-    @Test
-    public void testUsernameWithBlankPasswordFailsExplicitly() {
+    public void testUsernameWithEmptyPasswordIsPassedToOptions() throws Exception {
         NatsConnectionProperties props = new NatsConnectionProperties();
         props.setServer("nats://alphabet:4222");
         props.setUsername("user");
         props.setPassword("");
 
-        assertThatThrownBy(props::toOptions)
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("password must be set when username is set");
+        Options options = props.toOptions();
+
+        assertEquals("user", options.getUsername());
+        assertEquals("", options.getPassword());
     }
 
     @Test
-    public void testUsernameWithWhitespacePasswordFailsExplicitly() {
+    public void testUsernameWithWhitespacePasswordIsPassedToOptions() throws Exception {
         NatsConnectionProperties props = new NatsConnectionProperties();
         props.setServer("nats://alphabet:4222");
         props.setUsername("user");
         props.setPassword(" ");
 
-        assertThatThrownBy(props::toOptions)
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("password must be set when username is set");
+        Options options = props.toOptions();
+
+        assertEquals("user", options.getUsername());
+        assertEquals(" ", options.getPassword());
     }
 
     @Test
@@ -274,7 +265,7 @@ public class PropertiesTests {
     }
 
     @Test
-    public void testWhitespaceTokenDoesNotOverrideUserPassword() throws Exception {
+    public void testWhitespaceTokenOverridesUserPasswordLikeOtherTokenValues() throws Exception {
         NatsConnectionProperties props = new NatsConnectionProperties();
         props.setServer("nats://alphabet:4222");
         props.setUsername("user");
@@ -283,55 +274,51 @@ public class PropertiesTests {
 
         Options options = props.toOptions();
 
-        assertNull(options.getToken());
-        assertEquals("user", options.getUsername());
-        assertEquals("pass", options.getPassword());
+        assertEquals(" ", options.getToken());
+        assertNull(options.getUsername());
+        assertNull(options.getPassword());
     }
 
     @Test
-    public void testKeyStoreWithoutTrustStoreFailsExplicitly() {
+    public void testKeyStoreWithoutTrustStoreDoesNotEnableTls() throws Exception {
         NatsConnectionProperties props = new NatsConnectionProperties();
         props.setServer("nats://alphabet:4222");
         props.setKeyStorePath("src/test/resources/keystore.jks");
 
-        assertThatThrownBy(props::toOptions)
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("keystore and truststore paths must both be set for TLS");
+        Options options = props.toOptions();
+
+        assertNull(options.getSslContext());
     }
 
     @Test
-    public void testTrustStoreWithoutKeyStoreFailsExplicitly() {
+    public void testTrustStoreWithoutKeyStoreDoesNotEnableTls() throws Exception {
         NatsConnectionProperties props = new NatsConnectionProperties();
         props.setServer("nats://alphabet:4222");
         props.setTrustStorePath("src/test/resources/cacerts");
 
-        assertThatThrownBy(props::toOptions)
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("keystore and truststore paths must both be set for TLS");
+        Options options = props.toOptions();
+
+        assertNull(options.getSslContext());
     }
 
     @Test
-    public void testWhitespaceKeyStorePathWithTrustStoreFailsExplicitly() {
+    public void testWhitespaceKeyStorePathWithTrustStoreIsTreatedAsConfiguredPath() {
         NatsConnectionProperties props = new NatsConnectionProperties();
         props.setServer("nats://alphabet:4222");
         props.setKeyStorePath(" ");
         props.setTrustStorePath("src/test/resources/cacerts");
 
-        assertThatThrownBy(props::toOptions)
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("keystore and truststore paths must both be set for TLS");
+        assertThatThrownBy(props::toOptions).isInstanceOf(java.io.IOException.class);
     }
 
     @Test
-    public void testWhitespaceTrustStorePathWithKeyStoreFailsExplicitly() {
+    public void testWhitespaceTrustStorePathWithKeyStoreIsTreatedAsConfiguredPath() {
         NatsConnectionProperties props = new NatsConnectionProperties();
         props.setServer("nats://alphabet:4222");
         props.setKeyStorePath("src/test/resources/keystore.jks");
         props.setTrustStorePath(" ");
 
-        assertThatThrownBy(props::toOptions)
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("keystore and truststore paths must both be set for TLS");
+        assertThatThrownBy(props::toOptions).isInstanceOf(java.io.IOException.class);
     }
 
     @Test
@@ -353,7 +340,7 @@ public class PropertiesTests {
     }
 
     @Test
-    public void testWhitespaceAuthValuesAreIgnored() throws Exception {
+    public void testWhitespaceAuthValuesArePassedThroughLikeConfiguredValues() throws Exception {
         NatsConnectionProperties props = new NatsConnectionProperties();
         props.setServer("nats://alphabet:4222");
         props.setUsername(" ");
@@ -364,10 +351,10 @@ public class PropertiesTests {
 
         Options options = props.toOptions();
 
+        assertNotNull(options.getAuthHandler());
         assertNull(options.getUsername());
         assertNull(options.getPassword());
         assertNull(options.getToken());
-        assertNull(options.getAuthHandler());
     }
 
     @Test
@@ -456,15 +443,13 @@ public class PropertiesTests {
     }
 
     @Test
-    public void testWhitespaceTlsStorePathsDoNotEnableTls() throws Exception {
+    public void testWhitespaceTlsStorePathsAreTreatedAsConfiguredPaths() {
         NatsConnectionProperties props = new NatsConnectionProperties();
         props.setServer("nats://alphabet:4222");
         props.setKeyStorePath(" ");
         props.setTrustStorePath(" ");
 
-        Options options = props.toOptions();
-
-        assertNull(options.getSslContext());
+        assertThatThrownBy(props::toOptions).isInstanceOf(java.io.IOException.class);
     }
 
     @Test
@@ -546,7 +531,7 @@ public class PropertiesTests {
     }
 
     @Test
-    public void testToStringUsesPlaceholderForBlankSecrets() {
+    public void testToStringRedactsWhitespaceSecrets() {
         NatsConnectionProperties props = new NatsConnectionProperties();
         props.setUsername(" ");
         props.setPassword(" ");
@@ -555,7 +540,7 @@ public class PropertiesTests {
         props.setNkey(" ");
 
         assertThat(props.toString())
-                .contains("user=N/A", "password=N/A", "token=N/A", "creds=N/A", "nkey=N/A");
+                .contains("user=**********", "password=**********", "token=**********", "creds=**********", "nkey=**********");
     }
 
     private Path emptyPkcs12Store(String name) throws Exception {

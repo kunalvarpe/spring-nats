@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-final class NatsHeaderMapper {
+class NatsHeaderMapper {
     private static final Set<String> RESERVED_HEADERS = Set.of(
             MessageHeaders.ID,
             MessageHeaders.TIMESTAMP,
@@ -76,11 +76,13 @@ final class NatsHeaderMapper {
             return;
         }
 
-        if (value instanceof Collection<?> values) {
-            values.stream()
-                    .filter(item -> item != null)
-                    .map(Object::toString)
-                    .forEach(textValue -> addHeaderValue(natsHeaders, name, textValue));
+        if (value instanceof Collection<?>) {
+            Collection<?> values = (Collection<?>) value;
+            for (Object item : values) {
+                if (item != null) {
+                    addHeaderValue(natsHeaders, name, item.toString());
+                }
+            }
             return;
         }
 
@@ -107,6 +109,11 @@ final class NatsHeaderMapper {
     }
 
     private static boolean isReserved(String name) {
-        return RESERVED_HEADERS.stream().anyMatch(header -> header.equalsIgnoreCase(name));
+        for (String header : RESERVED_HEADERS) {
+            if (header.equalsIgnoreCase(name)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
