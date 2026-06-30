@@ -151,29 +151,70 @@ public class NatsChannelBinder extends
     @Override
     protected MessageHandler createProducerMessageHandler(ProducerDestination destination,
                                                           ExtendedProducerProperties<NatsProducerProperties> producerProperties, MessageChannel errorChannel) {
-        return new NatsMessageHandler(destination.getName(), this.connection, shouldUseNativeHeaders(producerProperties));
+        NatsProducerProperties extension = producerExtension(producerProperties);
+        NatsJetStreamSupport.provisionStream(this.connection, destination.getName(), extension);
+        return new NatsMessageHandler(destination.getName(), this.connection, shouldUseNativeHeaders(producerProperties),
+                isJetStream(extension), streamName(extension));
     }
 
     @Override
     protected MessageProducer createConsumerEndpoint(ConsumerDestination destination, String group,
                                                      ExtendedConsumerProperties<NatsConsumerProperties> properties) {
+        NatsConsumerProperties extension = consumerExtension(properties);
+        NatsConsumerDestination consumerDestination = (NatsConsumerDestination) destination;
         return new NatsMessageProducer(
-                (NatsConsumerDestination) destination,
+                consumerDestination,
                 this.connection,
                 shouldUseNativeHeaders(properties),
-                shouldMarkNativeHeadersPresent(properties));
+                shouldMarkNativeHeadersPresent(properties),
+                isJetStream(extension),
+                streamName(extension),
+                consumerName(extension));
     }
 
     @Override
     protected PolledConsumerResources createPolledConsumerResources(String name, String group,
                                                                     ConsumerDestination destination, ExtendedConsumerProperties<NatsConsumerProperties> consumerProperties) {
+        NatsConsumerProperties extension = consumerExtension(consumerProperties);
+        NatsConsumerDestination consumerDestination = (NatsConsumerDestination) destination;
         return new PolledConsumerResources(
                 new NatsMessageSource(
-                        (NatsConsumerDestination) destination,
+                        consumerDestination,
                         this.connection,
                         shouldUseNativeHeaders(consumerProperties),
-                        shouldMarkNativeHeadersPresent(consumerProperties)),
+                        shouldMarkNativeHeadersPresent(consumerProperties),
+                        isJetStream(extension),
+                        streamName(extension),
+                        consumerName(extension)),
                 registerErrorInfrastructure(destination, group, consumerProperties, true));
+    }
+
+    private static NatsProducerProperties producerExtension(ExtendedProducerProperties<NatsProducerProperties> producerProperties) {
+        return producerProperties == null ? null : producerProperties.getExtension();
+    }
+
+    private static NatsConsumerProperties consumerExtension(ExtendedConsumerProperties<NatsConsumerProperties> consumerProperties) {
+        return consumerProperties == null ? null : consumerProperties.getExtension();
+    }
+
+    private static boolean isJetStream(NatsProducerProperties properties) {
+        return properties != null && properties.isJetStream();
+    }
+
+    private static boolean isJetStream(NatsConsumerProperties properties) {
+        return properties != null && properties.isJetStream();
+    }
+
+    private static String streamName(NatsProducerProperties properties) {
+        return properties == null ? null : properties.getStreamName();
+    }
+
+    private static String streamName(NatsConsumerProperties properties) {
+        return properties == null ? null : properties.getStreamName();
+    }
+
+    private static String consumerName(NatsConsumerProperties properties) {
+        return properties == null ? null : properties.getConsumerName();
     }
 
     private static boolean shouldUseNativeHeaders(ExtendedProducerProperties<NatsProducerProperties> producerProperties) {

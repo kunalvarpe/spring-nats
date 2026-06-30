@@ -17,13 +17,18 @@
 package io.nats.cloud.stream.binder;
 
 import io.nats.client.Connection;
+import io.nats.client.JetStream;
+import io.nats.client.JetStreamApiException;
+import io.nats.client.PublishOptions;
 import io.nats.client.impl.Headers;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.integration.handler.AbstractMessageHandler;
 import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageHandlingException;
 import org.springframework.messaging.MessageHeaders;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 
@@ -37,6 +42,9 @@ public class NatsMessageHandler extends AbstractMessageHandler {
     private String subject;
     private Connection connection;
     private boolean publishHeaders;
+    private boolean jetStream;
+    private String streamName;
+    private JetStream jetStreamContext;
 
     /**
      * Create a handler with a specific, unchanging subject, and a NATS connection.
@@ -56,9 +64,25 @@ public class NatsMessageHandler extends AbstractMessageHandler {
      * @param publishHeaders whether Spring headers should be published as native NATS headers
      */
     public NatsMessageHandler(String subject, Connection nc, boolean publishHeaders) {
+        this(subject, nc, publishHeaders, false, null);
+    }
+
+    /**
+     * Create a handler with a specific, unchanging subject, a NATS connection, header mode, and JetStream mode.
+     *
+     * @param subject        where to send message to by default
+     * @param nc             NATS connection
+     * @param publishHeaders whether Spring headers should be published as native NATS headers
+     * @param jetStream      whether messages should be published through JetStream
+     * @param streamName     optional JetStream stream name
+     */
+    public NatsMessageHandler(String subject, Connection nc, boolean publishHeaders, boolean jetStream, String streamName) {
         this.subject = subject;
         this.connection = nc;
         this.publishHeaders = publishHeaders;
+        this.jetStream = jetStream;
+        this.streamName = NatsJetStreamSupport.normalize(streamName);
+        this.jetStreamContext = jetStreamContext(nc, jetStream);
     }
 
     @Override
@@ -90,11 +114,67 @@ public class NatsMessageHandler extends AbstractMessageHandler {
             final Object replyChannel = message.getHeaders().get(MessageHeaders.REPLY_CHANNEL);
             final String replyTo = replyChannel != null ? replyChannel.toString() : null;
             Headers headers = this.publishHeaders ? NatsHeaderMapper.fromSpringHeaders(message.getHeaders()) : null;
+            publishMessage(message, bytes, replyTo, headers);
+        }
+    }
+
+    private void publishMessage(Message<?> message, byte[] bytes, String replyTo, Headers headers) {
+        if (this.jetStream) {
+            publishJetStreamMessage(message, bytes, replyTo, headers);
+            return;
+        }
+
+        if (headers == null) {
+            this.connection.publish(this.subject, replyTo, bytes);
+        } else {
+            this.connection.publish(this.subject, replyTo, headers, bytes);
+        }
+    }
+
+    private void publishJetStreamMessage(Message<?> message, byte[] bytes, String replyTo, Headers headers) {
+        if (replyTo != null) {
+            throw new MessageHandlingException(message, "JetStream publishing does not support reply channels");
+        }
+
+        try {
+            JetStream js = this.jetStreamContext;
+            PublishOptions publishOptions = publishOptions();
             if (headers == null) {
-                this.connection.publish(this.subject, replyTo, bytes);
+                if (publishOptions == null) {
+                    js.publish(this.subject, bytes);
+                } else {
+                    js.publish(this.subject, bytes, publishOptions);
+                }
+            } else if (publishOptions == null) {
+                js.publish(this.subject, headers, bytes);
             } else {
-                this.connection.publish(this.subject, replyTo, headers, bytes);
+                js.publish(this.subject, headers, bytes, publishOptions);
             }
+        } catch (IOException | JetStreamApiException | IllegalArgumentException exp) {
+            throw new MessageHandlingException(message,
+                    "Failed to publish message to NATS JetStream subject " + this.subject, exp);
+        }
+    }
+
+    private PublishOptions publishOptions() {
+        if (!NatsJetStreamSupport.hasText(this.streamName)) {
+            return null;
+        }
+
+        return PublishOptions.builder()
+                .stream(this.streamName)
+                .build();
+    }
+
+    private static JetStream jetStreamContext(Connection nc, boolean jetStream) {
+        if (!jetStream || nc == null) {
+            return null;
+        }
+
+        try {
+            return nc.jetStream();
+        } catch (IOException exp) {
+            throw new IllegalStateException("Failed to create NATS JetStream context", exp);
         }
     }
 }

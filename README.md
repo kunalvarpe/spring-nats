@@ -15,6 +15,7 @@ Please note the version number is a combination of Semver and the Spring Boot Ve
 * [Using the NATS Modules](#using)
     * [Multiple NATS Connections](#multi)
 * [Using the Binder](#binder)
+    * [JetStream](#jetstream)
     * [Request-Reply](#reqreply)
     * [Partitions](#partition)
 * [Configuration](#configure)
@@ -149,15 +150,36 @@ and include a dependency on the library:
 
 See the [Spring Cloud Stream Documentation](https://spring.io/projects/spring-cloud-stream) for information about more complex configurations of the bindings.
 
+Spring Cloud Stream functional applications are supported. Bind `Consumer`, `Function`, or `StreamBridge` applications with the standard functional binding names such as `input-in-0`, `transform-in-0`, and `transform-out-0`; see `nats-spring-samples` and `demo` for working examples.
+
 The NATS binder leverages the autoconfigure module, or manual configuration to build a NATS connection. Standard properties are used to specify inputs and outputs. Inputs, specified with a destination and group name are mapped to subjects and queue names, with the destination becoming the subject, and the group becoming the queue. Outputs are specified with a destination name that becomes the subject.
 
-Consumers are implemented with a dispatcher. Each consumer will create its own dispatcher in the core library, resulting in a thread per consumer.
-
-Polled consumers are implemented with a subscription.
-
-> Currently, the polling code will wait forever for a message and is not configurable.
+Core NATS event consumers are implemented with a dispatcher, resulting in a thread per consumer. JetStream event consumers use a named JetStream consumer context. Polled consumers use a subscription for core NATS and a named JetStream consumer context for JetStream.
 
 Producers publish directly through the connection.
+
+### JetStream <a name="jetstream"></a>
+
+JetStream is opt-in per binding. Producer stream provisioning is optional with `provision-stream=true`; consumer streams and consumers should be created with NATS or the jnats `ConsumerConfiguration` API before the binder starts. JetStream consumers require `stream-name` and either `consumer-name` or a binding group. The binding group is used as the JetStream consumer name when `consumer-name` is not set.
+
+```properties
+nats.spring.cloud.stream.bindings.output.producer.jet-stream=true
+nats.spring.cloud.stream.bindings.output.producer.stream-name=ORDERS
+nats.spring.cloud.stream.bindings.output.producer.provision-stream=true
+nats.spring.cloud.stream.bindings.output.producer.stream-storage-type=memory
+nats.spring.cloud.stream.bindings.output.producer.stream-replicas=1
+nats.spring.cloud.stream.bindings.input.consumer.jet-stream=true
+nats.spring.cloud.stream.bindings.input.consumer.stream-name=ORDERS
+nats.spring.cloud.stream.bindings.input.consumer.consumer-name=orders-worker
+```
+
+When producer provisioning is enabled, the binder creates a missing stream for the binding destination subject. If the stream already exists, it must already cover the destination subject directly or through a NATS wildcard subject. `stream-storage-type` and `stream-replicas` are used only when creating a missing stream.
+
+JetStream producers wait for the server publish acknowledgement. Event consumers acknowledge after the Spring output channel accepts the message and negatively acknowledge when the output channel rejects the message. Polled consumers use the jnats consumer context and acknowledge through Spring's poll acknowledgement callback: successful polls acknowledge and rejected polls negatively acknowledge for redelivery.
+
+Consumer delivery settings such as acknowledgement wait, maximum deliveries, flow control, replay policy, and pull limits are configured on the JetStream consumer itself. Applications that previously configured those settings as binder consumer properties should create or update the JetStream consumer before the binding starts and set `consumer-name` to that consumer name.
+
+JetStream publishing does not support Spring reply channels because NATS uses the reply subject for JetStream publish acknowledgements. Use core NATS bindings for request-reply.
 
 ### Request-Reply <a name="reqreply"></a>
 
